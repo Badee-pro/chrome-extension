@@ -4,27 +4,29 @@ const CHECK_ALARM = 'deadline-check';
 const NOTIFY_WINDOW_HOURS = 24;
 const BASE = 'https://learn.uwaterloo.ca';
 
+function runFullSync() {
+  return syncAllCourses()
+    .then(() => {
+      checkAndNotify();
+      updateBadge();
+    })
+    .catch((e) => {
+      if (DEBUG) console.log('[LEARN Deadline Tracker] full sync failed', e && e.message, e);
+    });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(CHECK_ALARM, { periodInMinutes: 20 });
-  syncAllCourses().then(() => {
-    checkAndNotify();
-    updateBadge();
-  });
+  runFullSync();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  syncAllCourses().then(() => {
-    checkAndNotify();
-    updateBadge();
-  });
+  runFullSync();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CHECK_ALARM) {
-    syncAllCourses().then(() => {
-      checkAndNotify();
-      updateBadge();
-    });
+    runFullSync();
   }
 });
 
@@ -51,7 +53,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         updateBadge();
         sendResponse({ ok: true });
       })
-      .catch(() => sendResponse({ ok: false }));
+      .catch((e) => {
+        if (DEBUG) console.log('[LEARN Deadline Tracker] manual-sync failed', e && e.message, e);
+        sendResponse({ ok: false, error: e && e.message });
+      });
     return true; // keep the message channel open for the async response
   }
 
