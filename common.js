@@ -14,6 +14,117 @@ function monthIndex(name) {
   return MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(short));
 }
 
+// Crude HTML-to-text conversion for the background service worker, which
+// has no DOMParser. Not as faithful as a real innerText, but preserves
+// enough line structure for the outline regexes below to still work.
+function htmlToText(html) {
+  return decodeEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<(br|\/tr|\/td|\/div|\/p|\/li|\/h[1-6])[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  );
+}
+
+function parseTermYear(text) {
+  const m = text.match(/\b(Fall|Winter|Spring)\s+(\d{4})\b/);
+  if (!m) return { year: new Date().getFullYear(), startMonth: 0 };
+  const termStartMonth = { Fall: 8, Winter: 0, Spring: 4 };
+  return { year: parseInt(m[2], 10), startMonth: termStartMonth[m[1]] };
+}
+
+function extractCourseInfoFromText(text) {
+  const codeMatch = text.match(/\b([A-Z]{2,6})\s?(\d{2,4}[A-Z]?)\b/);
+  const code = codeMatch ? `${codeMatch[1]} ${codeMatch[2]}` : null;
+  const termMatch = text.match(/\b(Fall|Winter|Spring)\s+(\d{4})\b/);
+  const courseName = code && termMatch ? `${code} - ${termMatch[1]} ${termMatch[2]}` : code;
+  return { code, courseName };
+}
+
+// Date ranges on the outline page use an en dash (–), not a plain hyphen.
+const OUTLINE_RANGE_RE = /([A-Z][a-z]{2,8})\s+(\d{1,2})\s*[-‐-―]\s*(?:[A-Z][a-z]{2,8}\s+)?(\d{1,2})/g;
+const OUTLINE_EVENT_RE = /\b(Quiz\s*\d+|Midterm(?:\s+Exam)?|Final\s+Exam|Assignment\s*\d*|Test\s*\d*)\b/i;
+
+// Some outlines (e.g. MATH 239) state assignment due dates directly —
+// "A1 due Sep 23" — instead of only giving a week range. This is an exact
+// day (unlike the week-range quizzes below) and isn't covered by Odyssey
+// (which only schedules quizzes/midterms, not take-home assignments), so
+// it's kept in its own scrapeKey.
+const OUTLINE_ASSIGNMENT_DUE_RE = /\b(A\d{1,2}|Assignment\s*\d{1,2})\s+due\s+([A-Z][a-z]{2,8})\.?\s+(\d{1,2})\b/gi;
+
+function extractOutlineItemsFromText(text, code, courseName, pageUrl) {
+  const { year, startMonth } = parseTermYear(text);
+  const results = [];
+
+  const planIdx = text.indexOf('Tentative Class Plan');
+  if (planIdx !== -1) {
+    const endIdx = text.indexOf('Required Materials', planIdx);
+    const planText = text.slice(planIdx, endIdx === -1 ? planIdx + 6000 : endIdx);
+
+    const ranges = [];
+    let m;
+    OUTLINE_RANGE_RE.lastIndex = 0;
+    while ((m = OUTLINE_RANGE_RE.exec(planText)) !== null) {
+      ranges.push({ index: m.index, endIndex: OUTLINE_RANGE_RE.lastIndex, month: m[1], day: parseInt(m[2], 10) });
+    }
+
+    for (let i = 0; i < ranges.length; i++) {
+      const chunkStart = ranges[i].endIndex;
+      const chunkEnd = i + 1 < ranges.length ? ranges[i + 1].index : planText.length;
+      const eventMatch = planText.slice(chunkStart, chunkEnd).match(OUTLINE_EVENT_RE);
+      if (!eventMatch) continue;
+
+      const mIdx = monthIndex(ranges[i].month);
+      if (mIdx === -1) continue;
+      const eventYear = mIdx < startMonth ? year + 1 : year;
+      const due = new Date(eventYear, mIdx, ranges[i].day, 12, 0, 0);
+      if (isNaN(due.getTime())) continue;
+
+      const eventTitle = eventMatch[1].replace(/\s+/g, ' ').trim();
+      results.push({
+        id: `${code}:outline:${eventTitle}:${due.toISOString()}`,
+        title: `${eventTitle} (approx, outline)`,
+        type: /quiz|test|midterm|final/i.test(eventTitle) ? 'quiz' : 'assignment',
+        due: due.toISOString(),
+        courseId: code,
+        courseName,
+        url: pageUrl,
+        source: 'scrape',
+        scrapeKey: `${code}:outline`
+      });
+    }
+  }
+
+  OUTLINE_ASSIGNMENT_DUE_RE.lastIndex = 0;
+  let am;
+  while ((am = OUTLINE_ASSIGNMENT_DUE_RE.exec(text)) !== null) {
+    const mIdx = monthIndex(am[2]);
+    if (mIdx === -1) continue;
+    const eventYear = mIdx < startMonth ? year + 1 : year;
+    const due = new Date(eventYear, mIdx, parseInt(am[3], 10), 23, 59, 0);
+    if (isNaN(due.getTime())) continue;
+
+    const num = am[1].match(/\d+/)[0];
+    const title = `Assignment ${num}`;
+    results.push({
+      id: `${code}:outline-assignment:${title}:${due.toISOString()}`,
+      title: `${title} (outline)`,
+      type: 'assignment',
+      due: due.toISOString(),
+      courseId: code,
+      courseName,
+      url: pageUrl,
+      source: 'scrape',
+      scrapeKey: `${code}:outline-assignment`
+    });
+  }
+
+  const byId = new Map();
+  results.forEach((r) => byId.set(r.id, r));
+  return Array.from(byId.values());
+}
+
 function classify(title, toolType) {
   if (toolType === 'quiz') return 'quiz';
   if (toolType === 'dropbox') return 'assignment';

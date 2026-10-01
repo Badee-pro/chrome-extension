@@ -186,6 +186,59 @@ async function discoverCourses() {
   }
 }
 
+const OUTLINE_BASE = 'https://outline.uwaterloo.ca';
+const OUTLINE_SEARCH_URL = `${OUTLINE_BASE}/viewer/search/?q=`;
+
+async function syncOutlinePage(course) {
+  const url = `${OUTLINE_BASE}${course.url}`;
+  try {
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) {
+      if (DEBUG) console.log('[LEARN Deadline Tracker] outline fetch failed', course.courses, res.status);
+      return;
+    }
+    const html = await res.text();
+    const text = htmlToText(html);
+    const { code, courseName } = extractCourseInfoFromText(text);
+    if (!code) return;
+
+    const items = extractOutlineItemsFromText(text, code, courseName, url);
+    if (DEBUG) console.log('[LEARN Deadline Tracker] bg-outline scraped', course.courses, items.length);
+    if (items.length === 0) return;
+
+    const scrapeKeys = [...new Set(items.map((s) => s.scrapeKey))];
+    await enqueueWrite(() => mergeScrapedDeadlines(items, scrapeKeys));
+  } catch (e) {
+    if (DEBUG) console.log('[LEARN Deadline Tracker] outline sync error', course.courses, e.message);
+  }
+}
+
+// This endpoint lists every course you've ever taken, across all terms —
+// filter to the most recent term code present (UW term codes are 4-digit
+// and increase each term, e.g. "1269" > "1265") so we don't bother fetching
+// outlines for courses that have already ended.
+async function syncOutlines() {
+  try {
+    const res = await fetch(OUTLINE_SEARCH_URL, { credentials: 'include' });
+    if (!res.ok) {
+      if (DEBUG) console.log('[LEARN Deadline Tracker] outline search failed', res.status);
+      return;
+    }
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) return;
+
+    const currentTerm = list.reduce((max, c) => (c.term > max ? c.term : max), list[0].term);
+    const current = list.filter((c) => c.term === currentTerm);
+    if (DEBUG) console.log('[LEARN Deadline Tracker] outline courses', current.map((c) => c.courses));
+
+    for (const c of current) {
+      await syncOutlinePage(c);
+    }
+  } catch (e) {
+    if (DEBUG) console.log('[LEARN Deadline Tracker] outline search error', e.message);
+  }
+}
+
 async function syncAllCourses() {
   await discoverCourses();
   const { courses = {} } = await chrome.storage.local.get('courses');
@@ -193,6 +246,7 @@ async function syncAllCourses() {
     await syncCoursePage(id, name, 'dropbox', `${BASE}/d2l/lms/dropbox/user/folders_list.d2l?ou=${id}`);
     await syncCoursePage(id, name, 'quiz', `${BASE}/d2l/lms/quizzing/user/quizzes_list.d2l?ou=${id}`);
   }
+  await syncOutlines();
   // Odyssey rejects fetches that aren't a real page navigation (likely
   // SameSite=Strict session cookies being excluded from this cross-site
   // extension fetch, or an SSO redirect to a domain we don't have
