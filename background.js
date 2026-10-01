@@ -233,9 +233,13 @@ async function syncAllCourses() {
   await openHiddenTab('https://odyssey.uwaterloo.ca/teaching/schedule', 8000);
   await openHiddenTab('https://outline.uwaterloo.ca/viewer/?q=', 5000);
 
-  // No known discovery API for online.cs.uwaterloo.ca courses yet, so these
-  // Progress page URLs are hardcoded for this term's CS136/CS136L — will
-  // need updating to the new course-v1 ids next term.
+  // No known discovery API for online.cs.uwaterloo.ca/apps.online.cs
+  // courses yet, so these URLs are hardcoded for this term's CS136/CS136L —
+  // will need updating to the new course-v1 ids next term. The "home" page
+  // gives more granular per-activity due dates than the Progress page's
+  // module-level aggregate, when a module happens to be expanded already.
   await openHiddenTab('https://online.cs.uwaterloo.ca/courses/course-v1:UW+CS136+2026_09/progress', 8000);
   await openHiddenTab('https://online.cs.uwaterloo.ca/courses/course-v1:UW+CS136L+2026_09/progress', 8000);
+  await openHiddenTab('https://apps.online.cs.uwaterloo.ca/learning/course/course-v1:UW+CS136+2026_09/home', 8000);
+  await openHiddenTab('https://apps.online.cs.uwaterloo.ca/learning/course/course-v1:UW+CS136L+2026_09/home', 8000);
 }

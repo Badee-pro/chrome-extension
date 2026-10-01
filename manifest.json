@@ -41,7 +41,7 @@
     },
     {
       "matches": ["*://apps.online.cs.uwaterloo.ca/learning/course/*"],
-      "js": ["common.js", "content-cs-assignment.js"],
+      "js": ["common.js", "content-cs-assignment.js", "content-cs-home.js"],
       "run_at": "document_idle"
     }
   ],
