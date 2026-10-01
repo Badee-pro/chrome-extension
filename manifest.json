@@ -8,7 +8,8 @@
     "*://*.learn.uwaterloo.ca/*",
     "*://outline.uwaterloo.ca/*",
     "*://odyssey.uwaterloo.ca/*",
-    "*://online.cs.uwaterloo.ca/*"
+    "*://online.cs.uwaterloo.ca/*",
+    "*://apps.online.cs.uwaterloo.ca/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -36,6 +37,11 @@
     {
       "matches": ["*://online.cs.uwaterloo.ca/courses/*/progress*"],
       "js": ["common.js", "content-progress.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://apps.online.cs.uwaterloo.ca/learning/course/*"],
+      "js": ["common.js", "content-cs-assignment.js"],
       "run_at": "document_idle"
     }
   ],
