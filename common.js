@@ -74,13 +74,33 @@ function extractItemsFromHtml(html, toolType, courseId, courseName, baseUrl) {
   return Array.from(byId.values());
 }
 
+// Discovers enrolled courses from the raw HTML of the LEARN "My Home" page
+// (links to /d2l/home/<id> appear in the course cards / nav dropdown).
+// Used by the background service worker so it doesn't need the user to
+// visit each course first.
+function discoverCoursesFromHtml(html) {
+  const found = new Map();
+  const linkRe = /<a\s+[^>]*href="([^"]*\/d2l\/home\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m;
+  while ((m = linkRe.exec(html)) !== null) {
+    const id = m[2];
+    const text = decodeEntities(m[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    if (!text) continue;
+    const existing = found.get(id);
+    if (!existing || text.length > existing.length) found.set(id, text);
+  }
+  return Array.from(found.entries()).map(([id, name]) => ({ id, name }));
+}
+
 async function registerCourse(id, name) {
-  if (!id || !name) return;
+  if (!id || !name) return false;
   const { courses = {} } = await chrome.storage.local.get('courses');
   if (courses[id] !== name) {
     courses[id] = name;
     await chrome.storage.local.set({ courses });
+    return true;
   }
+  return false;
 }
 
 async function mergeScrapedDeadlines(scraped, scrapeKeys) {

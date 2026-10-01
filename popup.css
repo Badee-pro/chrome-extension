@@ -23,6 +23,20 @@ h1 {
   color: #80868b;
 }
 
+.sync-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: #1967d2;
+  padding: 2px 6px;
+}
+
+.sync-btn:disabled {
+  color: #80868b;
+  cursor: default;
+}
+
 .list {
   max-height: 320px;
   overflow-y: auto;

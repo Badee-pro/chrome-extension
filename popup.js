@@ -1,6 +1,7 @@
 const listEl = document.getElementById('list');
 const lastSyncEl = document.getElementById('lastSync');
 const addForm = document.getElementById('addForm');
+const syncBtn = document.getElementById('syncBtn');
 
 function fmtDue(iso) {
   const d = new Date(iso);
@@ -115,6 +116,19 @@ addForm.addEventListener('submit', async (e) => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes.deadlines || changes.lastScrapeAt)) load();
+});
+
+syncBtn.addEventListener('click', async () => {
+  syncBtn.disabled = true;
+  syncBtn.textContent = '…';
+  try {
+    await chrome.runtime.sendMessage({ type: 'manual-sync' });
+  } catch (e) {
+    // service worker may be asleep momentarily; ignore
+  }
+  await load();
+  syncBtn.disabled = false;
+  syncBtn.textContent = '↻';
 });
 
 load();

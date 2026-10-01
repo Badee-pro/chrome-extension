@@ -28,12 +28,22 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'deadlines-updated') {
     updateBadge();
   }
   if (msg && msg.type === 'course-registered') {
     syncAllCourses().then(updateBadge);
+  }
+  if (msg && msg.type === 'manual-sync') {
+    syncAllCourses()
+      .then(() => {
+        checkAndNotify();
+        updateBadge();
+        sendResponse({ ok: true });
+      })
+      .catch(() => sendResponse({ ok: false }));
+    return true; // keep the message channel open for the async response
   }
 });
 
@@ -113,7 +123,26 @@ async function syncCoursePage(courseId, courseName, toolType, url) {
   }
 }
 
+async function discoverCourses() {
+  try {
+    const res = await fetch(`${BASE}/d2l/home`, { credentials: 'include' });
+    if (!res.ok) {
+      if (DEBUG) console.log('[LEARN Deadline Tracker] home fetch failed', res.status);
+      return;
+    }
+    const html = await res.text();
+    const discovered = discoverCoursesFromHtml(html);
+    if (DEBUG) console.log('[LEARN Deadline Tracker] discovered courses', discovered);
+    for (const c of discovered) {
+      await registerCourse(c.id, c.name);
+    }
+  } catch (e) {
+    if (DEBUG) console.log('[LEARN Deadline Tracker] discovery error', e.message);
+  }
+}
+
 async function syncAllCourses() {
+  await discoverCourses();
   const { courses = {} } = await chrome.storage.local.get('courses');
   for (const [id, name] of Object.entries(courses)) {
     await syncCoursePage(id, name, 'dropbox', `${BASE}/d2l/lms/dropbox/user/folders_list.d2l?ou=${id}`);
