@@ -36,6 +36,20 @@ h1 {
   padding: 24px 0;
 }
 
+.course-group {
+  margin-bottom: 4px;
+}
+
+.course-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #5f6368;
+  padding: 10px 4px 4px;
+  border-bottom: 1px solid #dadce0;
+}
+
 .item {
   display: flex;
   align-items: center;

@@ -13,31 +13,61 @@ function fmtDue(iso) {
   });
 }
 
+function groupByCourse(deadlines) {
+  const groups = new Map();
+  for (const item of deadlines) {
+    const key = item.courseName || 'Other';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  for (const items of groups.values()) {
+    items.sort((a, b) => new Date(a.due) - new Date(b.due));
+  }
+  // Order courses by their soonest upcoming deadline
+  return Array.from(groups.entries()).sort((a, b) => {
+    const aNext = new Date(a[1][0].due).getTime();
+    const bNext = new Date(b[1][0].due).getTime();
+    return aNext - bNext;
+  });
+}
+
 function render(deadlines) {
   const now = Date.now();
-  const sorted = [...deadlines].sort((a, b) => new Date(a.due) - new Date(b.due));
-
   listEl.innerHTML = '';
-  if (sorted.length === 0) {
-    listEl.innerHTML = '<div class="empty">No deadlines yet. Visit your LEARN Calendar page, or add one below.</div>';
+
+  if (deadlines.length === 0) {
+    listEl.innerHTML = '<div class="empty">No deadlines yet. Visit a course\'s Dropbox or Quizzes page, or add one below.</div>';
     return;
   }
 
-  for (const item of sorted) {
-    const row = document.createElement('div');
-    row.className = 'item';
+  const groups = groupByCourse(deadlines);
 
-    const overdue = new Date(item.due).getTime() < now;
+  for (const [courseName, items] of groups) {
+    const section = document.createElement('div');
+    section.className = 'course-group';
 
-    row.innerHTML = `
-      <span class="badge ${item.type}">${item.type}</span>
-      <div class="info">
-        <div class="title">${item.url ? `<a href="${item.url}" target="_blank">${escapeHtml(item.title)}</a>` : escapeHtml(item.title)}</div>
-        <div class="due ${overdue ? 'overdue' : ''}">${fmtDue(item.due)}</div>
-      </div>
-      <button class="remove" data-id="${item.id}" title="Remove">&times;</button>
-    `;
-    listEl.appendChild(row);
+    const header = document.createElement('div');
+    header.className = 'course-header';
+    header.textContent = courseName;
+    section.appendChild(header);
+
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const overdue = new Date(item.due).getTime() < now;
+
+      row.innerHTML = `
+        <span class="badge ${item.type}">${item.type}</span>
+        <div class="info">
+          <div class="title">${item.url ? `<a href="${item.url}" target="_blank">${escapeHtml(item.title)}</a>` : escapeHtml(item.title)}</div>
+          <div class="due ${overdue ? 'overdue' : ''}">${fmtDue(item.due)}</div>
+        </div>
+        <button class="remove" data-id="${item.id}" title="Remove">&times;</button>
+      `;
+      section.appendChild(row);
+    }
+
+    listEl.appendChild(section);
   }
 
   listEl.querySelectorAll('button.remove').forEach((btn) => {
@@ -66,6 +96,7 @@ async function load() {
 
 addForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const courseName = document.getElementById('courseInput').value.trim() || null;
   const title = document.getElementById('titleInput').value.trim();
   const type = document.getElementById('typeInput').value;
   const dueRaw = document.getElementById('dueInput').value;
@@ -75,7 +106,7 @@ addForm.addEventListener('submit', async (e) => {
   const id = 'manual-' + crypto.randomUUID();
 
   const { deadlines = [] } = await chrome.storage.local.get('deadlines');
-  deadlines.push({ id, title, type, due, source: 'manual', url: null, courseId: null });
+  deadlines.push({ id, title, type, due, source: 'manual', url: null, courseId: null, courseName });
   await chrome.storage.local.set({ deadlines });
 
   addForm.reset();

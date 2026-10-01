@@ -1,115 +1,159 @@
-// Scrapes the Brightspace Calendar (agenda/list view) for assignment & quiz
-// deadlines. Brightspace renders this UI with web components, some of which
-// use shadow DOM, so plain querySelectorAll on `document` misses content.
-// This walks shadow roots too. If Waterloo changes their Calendar layout,
-// tune KEYWORDS / DATE_RE / the link-href filter below and reload the page.
+// Scrapes deadlines from classic D2L Brightspace tool pages:
+//  - Dropbox Folders list  (/d2l/lms/dropbox/user/folders_list.d2l)
+//  - Quiz List             (/d2l/lms/quizzing/user/quizzes_list.d2l)
+//  - Course/My Home "Work To Do" widget (/d2l/home...)
+//
+// These are plain server-rendered HTML (no shadow DOM), so this is a
+// straightforward table/text scrape. If Waterloo changes the markup, tune
+// the regexes below and reload the page (DEBUG logs what was found).
 
 const DEBUG = true;
 
-const KEYWORDS = {
-  quiz: /\bquiz\b|\btest\b|\bexam\b/i,
-  assignment: /\bassignment\b|\bdropbox\b|\bhomework\b|\blab\b|\bpaper\b|\bessay\b/i
-};
-
-const LINK_HINT_RE = /\/d2l\/(lms\/dropbox|lms\/quizzing|le\/content)\//i;
-
-const DATE_RE =
-  /\b([A-Z][a-z]{2,8})\s+(\d{1,2}),\s*(\d{4})(?:\s*(?:at)?\s*(\d{1,2}):(\d{2})\s*(AM|PM))?\b/;
-
-function collectAllElements(root, out) {
-  const walker = root.querySelectorAll ? root.querySelectorAll('*') : [];
-  walker.forEach((el) => {
-    out.push(el);
-    if (el.shadowRoot) collectAllElements(el.shadowRoot, out);
-  });
-  return out;
+function getCourseName() {
+  // Page <title> is "<Tool Name> - <Course Name>", e.g.
+  // "Dropbox Folders - PD 1 Online - Fall 2026"
+  const parts = document.title.split(' - ');
+  return parts.length > 1 ? parts.slice(1).join(' - ').trim() : null;
 }
 
-function parseDate(text) {
-  const m = text.match(DATE_RE);
-  if (!m) return null;
-  const [, month, day, year, hour, minute, ampm] = m;
-  let h = hour ? parseInt(hour, 10) : 23;
-  const min = minute ? parseInt(minute, 10) : 59;
-  if (ampm) {
-    if (/PM/i.test(ampm) && h !== 12) h += 12;
-    if (/AM/i.test(ampm) && h === 12) h = 0;
-  }
-  const d = new Date(`${month} ${day}, ${year} ${h}:${min}:00`);
-  return isNaN(d.getTime()) ? null : d;
+function getCourseId() {
+  return new URLSearchParams(location.search).get('ou');
 }
 
-function classify(title) {
-  if (KEYWORDS.quiz.test(title)) return 'quiz';
-  if (KEYWORDS.assignment.test(title)) return 'assignment';
+function classify(title, toolType) {
+  if (toolType === 'quiz') return 'quiz';
+  if (toolType === 'dropbox') return 'assignment';
+  if (/\bquiz\b|\btest\b|\bexam\b/i.test(title)) return 'quiz';
+  if (/\bassignment\b|\bdropbox\b|\bhomework\b|\blab\b/i.test(title)) return 'assignment';
   return 'other';
 }
 
-function extractCourseCode(href) {
-  const m = href && href.match(/ou=(\d+)/);
-  return m ? m[1] : null;
+const FULL_DATE_RE =
+  /Due on\s+([A-Z][a-z]{2,8}\s+\d{1,2},\s*\d{4})\s+(\d{1,2}:\d{2}\s*[AP]M)/;
+
+// "Due Oct 9" / "End Oct 3" (Work To Do widget, no year/time given)
+const SHORT_DATE_RE = /\b(Due|End)\s+([A-Z][a-z]{2,8})\s+(\d{1,2})\b/;
+
+function parseFullDate(text) {
+  const m = text.match(FULL_DATE_RE);
+  if (!m) return null;
+  const d = new Date(`${m[1]} ${m[2]}`);
+  return isNaN(d.getTime()) ? null : d;
 }
 
-function scrapeCalendar() {
-  const all = collectAllElements(document, []);
-  const links = all.filter(
-    (el) => el.tagName === 'A' && el.href && LINK_HINT_RE.test(el.href)
+function parseShortDate(text) {
+  const m = text.match(SHORT_DATE_RE);
+  if (!m) return null;
+  const now = new Date();
+  let year = now.getFullYear();
+  let d = new Date(`${m[2]} ${m[3]}, ${year} 23:59:00`);
+  if (isNaN(d.getTime())) return null;
+  // If the parsed date is more than ~30 days in the past, it's probably
+  // next year's occurrence of that month/day.
+  if (d.getTime() < now.getTime() - 30 * 24 * 60 * 60 * 1000) {
+    d = new Date(`${m[2]} ${m[3]}, ${year + 1} 23:59:00`);
+  }
+  return d;
+}
+
+function scrapeTable(toolType) {
+  const courseName = getCourseName();
+  const courseId = getCourseId();
+  const rows = document.querySelectorAll('table tr');
+  const results = [];
+
+  rows.forEach((row) => {
+    const link = row.querySelector('a');
+    if (!link) return;
+    const title = link.textContent.trim();
+    if (!title) return;
+
+    const due = parseFullDate(row.textContent || '');
+    if (!due) return;
+
+    results.push({
+      id: `${courseId}:${toolType}:${title}:${due.toISOString()}`,
+      title,
+      type: classify(title, toolType),
+      due: due.toISOString(),
+      courseId,
+      courseName,
+      url: link.href || location.href,
+      source: 'scrape',
+      scrapeKey: `${courseId}:${toolType}`
+    });
+  });
+
+  return results;
+}
+
+function scrapeWorkToDo() {
+  const courseName = getCourseName();
+  const courseId = getCourseId();
+  const links = Array.from(document.querySelectorAll('a')).filter(
+    (a) => a.textContent.trim().length > 0
   );
 
-  const found = [];
+  const results = [];
   for (const link of links) {
-    const title = (link.textContent || '').trim();
-    if (!title) continue;
-
-    // Search the link's ancestors (up a few levels) and their text for a
-    // nearby date, since the date is usually a sibling label, not inside
-    // the link itself.
-    let dateText = '';
-    let node = link;
-    for (let i = 0; i < 6 && node; i++) {
-      dateText += ' ' + (node.textContent || '');
-      node = node.parentElement || (node.getRootNode && node.getRootNode().host);
-    }
-
-    const due = parseDate(dateText);
+    const container = link.closest('li, tr, div') || link.parentElement;
+    if (!container) continue;
+    const text = container.textContent || '';
+    const due = parseShortDate(text);
     if (!due) continue;
 
-    found.push({
-      id: link.href + '|' + due.toISOString(),
+    const title = link.textContent.trim();
+    results.push({
+      id: `${courseId}:worktodo:${title}:${due.toISOString()}`,
       title,
-      type: classify(title),
+      type: classify(title, 'worktodo'),
       due: due.toISOString(),
-      courseId: extractCourseCode(link.href),
-      url: link.href,
-      source: 'scrape'
+      courseId,
+      courseName,
+      url: link.href || location.href,
+      source: 'scrape',
+      scrapeKey: `${courseId}:worktodo`
     });
   }
 
-  // De-dupe by id
+  // De-dupe by id (same item can match via multiple ancestor containers)
   const byId = new Map();
-  found.forEach((item) => byId.set(item.id, item));
+  results.forEach((r) => byId.set(r.id, r));
   return Array.from(byId.values());
 }
 
+function detectToolType() {
+  if (location.pathname.includes('/lms/dropbox/')) return 'dropbox';
+  if (location.pathname.includes('/lms/quizzing/')) return 'quiz';
+  if (location.pathname.includes('/d2l/home')) return 'worktodo';
+  return null;
+}
+
 async function sync() {
-  const scraped = scrapeCalendar();
-  if (DEBUG) console.log('[LEARN Deadline Tracker] scraped', scraped.length, 'items', scraped);
+  const toolType = detectToolType();
+  if (!toolType) return;
+
+  const scraped = toolType === 'worktodo' ? scrapeWorkToDo() : scrapeTable(toolType);
+  if (DEBUG) console.log('[LEARN Deadline Tracker] scraped', toolType, scraped.length, 'items', scraped);
 
   if (scraped.length === 0) return;
 
+  const scrapeKeys = new Set(scraped.map((s) => s.scrapeKey));
   const { deadlines = [] } = await chrome.storage.local.get('deadlines');
-  const manual = deadlines.filter((d) => d.source === 'manual');
-  const merged = [...manual, ...scraped];
+  const kept = deadlines.filter(
+    (d) => d.source === 'manual' || !scrapeKeys.has(d.scrapeKey)
+  );
+  const merged = [...kept, ...scraped];
 
   await chrome.storage.local.set({ deadlines: merged, lastScrapeAt: new Date().toISOString() });
   chrome.runtime.sendMessage({ type: 'deadlines-updated' }).catch(() => {});
 }
 
-// Brightspace loads the calendar content asynchronously after navigation,
-// so retry a few times instead of scraping once at document_idle.
+// Brightspace can render table/widget content slightly after document_idle,
+// so retry a few times instead of scraping once.
 let attempts = 0;
 const interval = setInterval(() => {
   attempts += 1;
   sync();
-  if (attempts >= 6) clearInterval(interval);
-}, 2000);
+  if (attempts >= 5) clearInterval(interval);
+}, 1500);

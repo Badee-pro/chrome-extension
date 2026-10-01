@@ -12,7 +12,11 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.learn.uwaterloo.ca/d2l/le/calendar/*"],
+      "matches": [
+        "*://learn.uwaterloo.ca/d2l/lms/dropbox/user/folders_list.d2l*",
+        "*://learn.uwaterloo.ca/d2l/lms/quizzing/user/quizzes_list.d2l*",
+        "*://learn.uwaterloo.ca/d2l/home*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
