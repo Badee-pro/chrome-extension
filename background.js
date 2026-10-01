@@ -205,18 +205,50 @@ async function discoverCourses() {
 // satisfies that, and the existing content scripts for those pages handle
 // the actual scraping exactly as if visited manually — this just automates
 // the "visiting" part.
-function openHiddenTab(url, waitMs) {
-  return new Promise((resolve) => {
-    chrome.tabs.create({ url, active: false }, (tab) => {
-      if (!tab || !tab.id) {
-        resolve();
-        return;
-      }
-      setTimeout(() => {
-        chrome.tabs.remove(tab.id, () => resolve());
-      }, waitMs);
-    });
+// All of this happens inside one minimized, out-of-sight window instead of
+// the user's actual browsing window, so the tab-opening/closing churn is
+// never actually seen. chrome.storage.session (cleared when the browser
+// fully closes, unlike local) tracks its window id across service worker
+// restarts so a sync cycle reuses the same hidden window rather than
+// creating a new one each time.
+async function getOrCreateHiddenWindow() {
+  const { hiddenWindowId } = await chrome.storage.session.get('hiddenWindowId');
+  if (hiddenWindowId) {
+    try {
+      await chrome.windows.get(hiddenWindowId);
+      return hiddenWindowId;
+    } catch {
+      // window was closed (e.g. browser restarted) — fall through and
+      // create a fresh one below.
+    }
+  }
+
+  const win = await chrome.windows.create({
+    url: 'about:blank',
+    focused: false,
+    state: 'minimized',
+    width: 400,
+    height: 300
   });
+  await chrome.storage.session.set({ hiddenWindowId: win.id });
+  return win.id;
+}
+
+function openHiddenTab(url, waitMs) {
+  return getOrCreateHiddenWindow().then(
+    (windowId) =>
+      new Promise((resolve) => {
+        chrome.tabs.create({ url, active: false, windowId }, (tab) => {
+          if (!tab || !tab.id) {
+            resolve();
+            return;
+          }
+          setTimeout(() => {
+            chrome.tabs.remove(tab.id, () => resolve());
+          }, waitMs);
+        });
+      })
+  );
 }
 
 async function openHiddenTabsSequentially(urls) {
