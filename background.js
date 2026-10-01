@@ -1,25 +1,39 @@
+importScripts('common.js');
+
 const CHECK_ALARM = 'deadline-check';
 const NOTIFY_WINDOW_HOURS = 24;
+const BASE = 'https://learn.uwaterloo.ca';
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create(CHECK_ALARM, { periodInMinutes: 30 });
-  updateBadge();
+  chrome.alarms.create(CHECK_ALARM, { periodInMinutes: 20 });
+  syncAllCourses().then(() => {
+    checkAndNotify();
+    updateBadge();
+  });
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  updateBadge();
+  syncAllCourses().then(() => {
+    checkAndNotify();
+    updateBadge();
+  });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CHECK_ALARM) {
-    checkAndNotify();
-    updateBadge();
+    syncAllCourses().then(() => {
+      checkAndNotify();
+      updateBadge();
+    });
   }
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'deadlines-updated') {
     updateBadge();
+  }
+  if (msg && msg.type === 'course-registered') {
+    syncAllCourses().then(updateBadge);
   }
 });
 
@@ -34,7 +48,7 @@ async function getDeadlines() {
   return deadlines;
 }
 
-function upcoming(deadlines, days = 7) {
+function upcoming(deadlines, days) {
   const now = Date.now();
   const horizon = now + days * 24 * 60 * 60 * 1000;
   return deadlines
@@ -47,8 +61,7 @@ function upcoming(deadlines, days = 7) {
 
 async function updateBadge() {
   const deadlines = await getDeadlines();
-  const dueSoon = upcoming(deadlines, 2);
-  const count = dueSoon.length;
+  const count = upcoming(deadlines, 2).length;
   chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
   chrome.action.setBadgeBackgroundColor({ color: count > 0 ? '#d93025' : '#5f6368' });
 }
@@ -60,8 +73,7 @@ async function checkAndNotify() {
   const nextNotified = { ...notified };
 
   for (const item of deadlines) {
-    const dueTime = new Date(item.due).getTime();
-    const hoursUntil = (dueTime - now) / (1000 * 60 * 60);
+    const hoursUntil = (new Date(item.due).getTime() - now) / (1000 * 60 * 60);
     if (hoursUntil > 0 && hoursUntil <= NOTIFY_WINDOW_HOURS && !notified[item.id]) {
       chrome.notifications.create(item.id, {
         type: 'basic',
@@ -84,3 +96,27 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
     chrome.tabs.create({ url: item.url });
   }
 });
+
+async function syncCoursePage(courseId, courseName, toolType, url) {
+  try {
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) {
+      if (DEBUG) console.log('[LEARN Deadline Tracker] bg fetch failed', toolType, courseId, res.status);
+      return;
+    }
+    const html = await res.text();
+    const items = extractItemsFromHtml(html, toolType, courseId, courseName, BASE);
+    if (DEBUG) console.log('[LEARN Deadline Tracker] bg-scraped', toolType, courseId, items.length);
+    await mergeScrapedDeadlines(items, [`${courseId}:${toolType}`]);
+  } catch (e) {
+    if (DEBUG) console.log('[LEARN Deadline Tracker] bg sync error', toolType, courseId, e.message);
+  }
+}
+
+async function syncAllCourses() {
+  const { courses = {} } = await chrome.storage.local.get('courses');
+  for (const [id, name] of Object.entries(courses)) {
+    await syncCoursePage(id, name, 'dropbox', `${BASE}/d2l/lms/dropbox/user/folders_list.d2l?ou=${id}`);
+    await syncCoursePage(id, name, 'quiz', `${BASE}/d2l/lms/quizzing/user/quizzes_list.d2l?ou=${id}`);
+  }
+}
