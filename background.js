@@ -28,13 +28,22 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// Content scripts (LEARN, Outline, Odyssey pages) and this background
+// script's own periodic sync can both try to read-modify-write the same
+// storage key at the same time. Routing every write through this single
+// queue serializes them so a slow background sync can't silently clobber
+// a content script's write that landed in between its read and write.
+let writeQueue = Promise.resolve();
+function enqueueWrite(fn) {
+  const result = writeQueue.then(fn, fn);
+  writeQueue = result.then(
+    () => {},
+    () => {}
+  );
+  return result;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg && msg.type === 'deadlines-updated') {
-    updateBadge();
-  }
-  if (msg && msg.type === 'course-registered') {
-    syncAllCourses().then(updateBadge);
-  }
   if (msg && msg.type === 'manual-sync') {
     syncAllCourses()
       .then(() => {
@@ -44,6 +53,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       })
       .catch(() => sendResponse({ ok: false }));
     return true; // keep the message channel open for the async response
+  }
+
+  if (msg && msg.type === 'merge-deadlines') {
+    enqueueWrite(() => mergeScrapedDeadlines(msg.scraped, msg.scrapeKeys))
+      .then(() => {
+        updateBadge();
+        sendResponse({ ok: true });
+      })
+      .catch((e) => {
+        if (DEBUG) console.log('[LEARN Deadline Tracker] merge-deadlines failed', e && e.message);
+        sendResponse({ ok: false, error: e && e.message });
+      });
+    return true;
+  }
+
+  if (msg && msg.type === 'register-course') {
+    enqueueWrite(() => registerCourse(msg.id, msg.name))
+      .then((isNew) => {
+        sendResponse({ ok: true, isNew });
+        if (isNew) syncAllCourses().then(updateBadge);
+      })
+      .catch((e) => {
+        if (DEBUG) console.log('[LEARN Deadline Tracker] register-course failed', e && e.message);
+        sendResponse({ ok: false, error: e && e.message });
+      });
+    return true;
   }
 });
 
@@ -117,7 +152,7 @@ async function syncCoursePage(courseId, courseName, toolType, url) {
     const html = await res.text();
     const items = extractItemsFromHtml(html, toolType, courseId, courseName, BASE);
     if (DEBUG) console.log('[LEARN Deadline Tracker] bg-scraped', toolType, courseId, items.length);
-    await mergeScrapedDeadlines(items, [`${courseId}:${toolType}`]);
+    await enqueueWrite(() => mergeScrapedDeadlines(items, [`${courseId}:${toolType}`]));
   } catch (e) {
     if (DEBUG) console.log('[LEARN Deadline Tracker] bg sync error', toolType, courseId, e.message);
   }
@@ -144,7 +179,7 @@ async function discoverCourses() {
     );
     if (DEBUG) console.log('[LEARN Deadline Tracker] discovered courses', active.map((c) => c.Name));
     for (const c of active) {
-      await registerCourse(String(c.OrgUnitId), c.Name);
+      await enqueueWrite(() => registerCourse(String(c.OrgUnitId), c.Name));
     }
   } catch (e) {
     if (DEBUG) console.log('[LEARN Deadline Tracker] discovery error', e.message);

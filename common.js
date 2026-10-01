@@ -4,6 +4,16 @@
 
 const DEBUG = true;
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+function monthIndex(name) {
+  const short = name.toLowerCase().slice(0, 3);
+  return MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(short));
+}
+
 function classify(title, toolType) {
   if (toolType === 'quiz') return 'quiz';
   if (toolType === 'dropbox') return 'assignment';
@@ -76,6 +86,18 @@ function extractItemsFromHtml(html, toolType, courseId, courseName, baseUrl) {
   const byId = new Map();
   results.forEach((r) => byId.set(r.id, r));
   return Array.from(byId.values());
+}
+
+// Content scripts must NOT write to chrome.storage.local for deadlines or
+// courses directly — the background service worker owns those writes
+// through a serialized queue, so a content script's write can't be lost to
+// a race with the background's own periodic sync. These just ask it to.
+function requestMergeDeadlines(scraped, scrapeKeys) {
+  return chrome.runtime.sendMessage({ type: 'merge-deadlines', scraped, scrapeKeys });
+}
+
+function requestRegisterCourse(id, name) {
+  return chrome.runtime.sendMessage({ type: 'register-course', id, name });
 }
 
 async function registerCourse(id, name) {

@@ -4,16 +4,6 @@
 // exact day — so these are stored as approximate, clearly labeled, and kept
 // in their own scrapeKey so they never overwrite a precise LEARN date.
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-
-function monthIndex(name) {
-  const short = name.toLowerCase().slice(0, 3);
-  return MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(short));
-}
-
 function parseTermYear(text) {
   const m = text.match(/\b(Fall|Winter|Spring)\s+(\d{4})\b/);
   if (!m) return { year: new Date().getFullYear(), startMonth: 0 };
@@ -87,8 +77,7 @@ async function sync() {
   const scraped = scrapeOutline();
   if (DEBUG) console.log('[LEARN Deadline Tracker] outline scraped', scraped.length, scraped);
   if (scraped.length === 0) return;
-  await mergeScrapedDeadlines(scraped, [scraped[0].scrapeKey]);
-  chrome.runtime.sendMessage({ type: 'deadlines-updated' }).catch(() => {});
+  await requestMergeDeadlines(scraped, [scraped[0].scrapeKey]).catch(() => {});
 }
 
 let attempts = 0;

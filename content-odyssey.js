@@ -65,8 +65,7 @@ async function sync() {
   if (scraped.length === 0) return;
 
   const scrapeKeys = [...new Set(scraped.map((s) => s.scrapeKey))];
-  await mergeScrapedDeadlines(scraped, scrapeKeys);
-  chrome.runtime.sendMessage({ type: 'deadlines-updated' }).catch(() => {});
+  await requestMergeDeadlines(scraped, scrapeKeys).catch(() => {});
 }
 
 let attempts = 0;

@@ -58,7 +58,7 @@ function renderItemRow(item, now, showCourse) {
   return row;
 }
 
-const DUE_SOON_MS = 3 * 24 * 60 * 60 * 1000;
+const DUE_SOON_MS = 14 * 24 * 60 * 60 * 1000;
 
 function render(deadlines) {
   const now = Date.now();
@@ -81,7 +81,7 @@ function render(deadlines) {
     section.className = 'due-soon-section';
     const header = document.createElement('div');
     header.className = 'section-header';
-    header.textContent = `Due in the next 3 days (${dueSoon.length})`;
+    header.textContent = `Due in the next 2 weeks (${dueSoon.length})`;
     section.appendChild(header);
     dueSoon.forEach((item) => section.appendChild(renderItemRow(item, now, true)));
     listEl.appendChild(section);

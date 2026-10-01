@@ -111,16 +111,14 @@ async function sync() {
   const courseId = getCourseId();
   const courseName = getCourseName();
   if (courseId && courseName) {
-    const isNewCourse = await registerCourse(courseId, courseName);
-    if (isNewCourse) chrome.runtime.sendMessage({ type: 'course-registered' }).catch(() => {});
+    await requestRegisterCourse(courseId, courseName).catch(() => {});
   }
 
   const scraped = toolType === 'worktodo' ? scrapeWorkToDo() : scrapeTable(toolType);
   if (DEBUG) console.log('[LEARN Deadline Tracker] scraped', toolType, scraped.length, 'items', scraped);
   if (scraped.length === 0) return;
 
-  await mergeScrapedDeadlines(scraped, [`${courseId}:${toolType}`]);
-  chrome.runtime.sendMessage({ type: 'deadlines-updated' }).catch(() => {});
+  await requestMergeDeadlines(scraped, [`${courseId}:${toolType}`]).catch(() => {});
 }
 
 // Brightspace can render table/widget content slightly after document_idle,

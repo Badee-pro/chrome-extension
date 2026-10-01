@@ -7,7 +7,8 @@
   "host_permissions": [
     "*://*.learn.uwaterloo.ca/*",
     "*://outline.uwaterloo.ca/*",
-    "*://odyssey.uwaterloo.ca/*"
+    "*://odyssey.uwaterloo.ca/*",
+    "*://online.cs.uwaterloo.ca/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -30,6 +31,11 @@
     {
       "matches": ["*://odyssey.uwaterloo.ca/teaching/schedule*"],
       "js": ["common.js", "content-odyssey.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://online.cs.uwaterloo.ca/courses/*/progress*"],
+      "js": ["common.js", "content-progress.js"],
       "run_at": "document_idle"
     }
   ],
