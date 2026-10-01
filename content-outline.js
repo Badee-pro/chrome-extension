@@ -23,6 +23,40 @@ function getCourseInfo(text) {
 const RANGE_RE = /([A-Z][a-z]{2,8})\s+(\d{1,2})\s*[-‐-―]\s*(?:[A-Z][a-z]{2,8}\s+)?(\d{1,2})/g;
 const EVENT_RE = /\b(Quiz\s*\d+|Midterm(?:\s+Exam)?|Final\s+Exam|Assignment\s*\d*|Test\s*\d*)\b/i;
 
+// Some outlines (e.g. MATH 239) state assignment due dates directly —
+// "A1 due Sep 23" — instead of only giving a week range. This is an exact
+// day (unlike the week-range quizzes below) and isn't covered by Odyssey
+// (which only schedules quizzes/midterms, not take-home assignments), so
+// it's kept in its own scrapeKey.
+const ASSIGNMENT_DUE_RE = /\b(A\d{1,2}|Assignment\s*\d{1,2})\s+due\s+([A-Z][a-z]{2,8})\.?\s+(\d{1,2})\b/gi;
+
+function scrapeAssignmentDueDates(text, code, courseName, year, startMonth) {
+  const results = [];
+  let m;
+  while ((m = ASSIGNMENT_DUE_RE.exec(text)) !== null) {
+    const mIdx = monthIndex(m[2]);
+    if (mIdx === -1) continue;
+    const eventYear = mIdx < startMonth ? year + 1 : year;
+    const due = new Date(eventYear, mIdx, parseInt(m[3], 10), 23, 59, 0);
+    if (isNaN(due.getTime())) continue;
+
+    const num = m[1].match(/\d+/)[0];
+    const title = `Assignment ${num}`;
+    results.push({
+      id: `${code}:outline-assignment:${title}:${due.toISOString()}`,
+      title: `${title} (outline)`,
+      type: 'assignment',
+      due: due.toISOString(),
+      courseId: code,
+      courseName,
+      url: location.href,
+      source: 'scrape',
+      scrapeKey: `${code}:outline-assignment`
+    });
+  }
+  return results;
+}
+
 function scrapeOutline() {
   const text = document.body.innerText;
   const { code, courseName } = getCourseInfo(text);
@@ -68,6 +102,8 @@ function scrapeOutline() {
     });
   }
 
+  results.push(...scrapeAssignmentDueDates(text, code, courseName, year, startMonth));
+
   const byId = new Map();
   results.forEach((r) => byId.set(r.id, r));
   return Array.from(byId.values());
@@ -77,7 +113,8 @@ async function sync() {
   const scraped = scrapeOutline();
   if (DEBUG) console.log('[LEARN Deadline Tracker] outline scraped', scraped.length, scraped);
   if (scraped.length === 0) return;
-  await requestMergeDeadlines(scraped, [scraped[0].scrapeKey]).catch(() => {});
+  const scrapeKeys = [...new Set(scraped.map((s) => s.scrapeKey))];
+  await requestMergeDeadlines(scraped, scrapeKeys).catch(() => {});
 }
 
 let attempts = 0;
