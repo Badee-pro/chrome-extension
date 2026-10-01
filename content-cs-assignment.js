@@ -26,6 +26,16 @@ function getPageTitle() {
   return document.title.split('|')[0].trim();
 }
 
+// Several pages share the same generic heading (e.g. every module's lab
+// page is just titled "Lab"), so the page's own block id from the URL is
+// used for uniqueness instead of the (possibly duplicate) title text —
+// otherwise visiting one module's "Lab" page would overwrite a different
+// module's previously-scraped "Lab" due date.
+function getBlockId() {
+  const parts = location.pathname.split('/').filter(Boolean);
+  return parts[parts.length - 1] || location.pathname;
+}
+
 function scrapeAssignmentPage() {
   const code = getCourseCode();
   if (!code) return [];
@@ -49,11 +59,10 @@ function scrapeAssignmentPage() {
   const title = getPageTitle();
   if (!title) return [];
 
-  // Keyed per-title so visiting one assignment's page never wipes out a
-  // previously-scraped different assignment from this same course.
+  const blockId = getBlockId();
   return [
     {
-      id: `${code}:cs-page:${title}:${due.toISOString()}`,
+      id: `${code}:cs-page:${blockId}:${due.toISOString()}`,
       title,
       type: 'assignment',
       due: due.toISOString(),
@@ -61,7 +70,7 @@ function scrapeAssignmentPage() {
       courseName: code,
       url: location.href,
       source: 'scrape',
-      scrapeKey: `${code}:cs-page:${title}`
+      scrapeKey: `${code}:cs-page:${blockId}`
     }
   ];
 }
