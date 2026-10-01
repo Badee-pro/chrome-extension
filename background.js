@@ -232,4 +232,10 @@ async function syncAllCourses() {
   // hidden tab per course via the 'open-hidden-tabs' message handler.
   await openHiddenTab('https://odyssey.uwaterloo.ca/teaching/schedule', 8000);
   await openHiddenTab('https://outline.uwaterloo.ca/viewer/?q=', 5000);
+
+  // No known discovery API for online.cs.uwaterloo.ca courses yet, so these
+  // Progress page URLs are hardcoded for this term's CS136/CS136L — will
+  // need updating to the new course-v1 ids next term.
+  await openHiddenTab('https://online.cs.uwaterloo.ca/courses/course-v1:UW+CS136+2026_09/progress', 8000);
+  await openHiddenTab('https://online.cs.uwaterloo.ca/courses/course-v1:UW+CS136L+2026_09/progress', 8000);
 }
