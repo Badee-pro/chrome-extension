@@ -80,6 +80,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     return true;
   }
+
+  if (msg && msg.type === 'open-hidden-tabs') {
+    openHiddenTabsSequentially(msg.urls || []);
+    // Fire-and-forget: each tab's own content script reports back via its
+    // own 'merge-deadlines' message once it's scraped the page.
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -186,6 +192,33 @@ async function discoverCourses() {
   }
 }
 
+// Outline and Odyssey both reject a plain background fetch (outline returns
+// its login page's HTML instead of JSON; odyssey fails outright) — their
+// SSO session apparently requires a real page navigation that a service
+// worker fetch can't replicate. Opening a real (hidden, non-focused) tab
+// satisfies that, and the existing content scripts for those pages handle
+// the actual scraping exactly as if visited manually — this just automates
+// the "visiting" part.
+function openHiddenTab(url, waitMs) {
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url, active: false }, (tab) => {
+      if (!tab || !tab.id) {
+        resolve();
+        return;
+      }
+      setTimeout(() => {
+        chrome.tabs.remove(tab.id, () => resolve());
+      }, waitMs);
+    });
+  });
+}
+
+async function openHiddenTabsSequentially(urls) {
+  for (const url of urls) {
+    await openHiddenTab(url, 8000);
+  }
+}
+
 async function syncAllCourses() {
   await discoverCourses();
   const { courses = {} } = await chrome.storage.local.get('courses');
@@ -193,10 +226,10 @@ async function syncAllCourses() {
     await syncCoursePage(id, name, 'dropbox', `${BASE}/d2l/lms/dropbox/user/folders_list.d2l?ou=${id}`);
     await syncCoursePage(id, name, 'quiz', `${BASE}/d2l/lms/quizzing/user/quizzes_list.d2l?ou=${id}`);
   }
-  // Outline and Odyssey both reject background-fetched requests (outline
-  // returns its login page's HTML instead of JSON; odyssey fails the fetch
-  // outright) — their SSO session apparently requires a real page
-  // navigation that a service worker fetch can't replicate. Only LEARN's
-  // session works this way, so outline/odyssey stay visit-based via their
-  // content scripts instead of fighting that here.
+  // Odyssey is a single page covering every course, so just open it.
+  // Outline needs its listing page first — that page's own content script
+  // (content-outline.js) discovers enrolled courses and asks us to open a
+  // hidden tab per course via the 'open-hidden-tabs' message handler.
+  await openHiddenTab('https://odyssey.uwaterloo.ca/teaching/schedule', 8000);
+  await openHiddenTab('https://outline.uwaterloo.ca/viewer/?q=', 5000);
 }

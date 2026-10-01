@@ -3,7 +3,7 @@
   "name": "LEARN Deadline Tracker",
   "version": "0.1.0",
   "description": "Tracks assignment and quiz deadlines from UWaterloo LEARN (D2L Brightspace) and reminds you before they're due.",
-  "permissions": ["storage", "alarms", "notifications", "scripting"],
+  "permissions": ["storage", "alarms", "notifications", "scripting", "tabs"],
   "host_permissions": [
     "*://*.learn.uwaterloo.ca/*",
     "*://outline.uwaterloo.ca/*",
