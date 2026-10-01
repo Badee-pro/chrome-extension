@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>LEARN Deadline Tracker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>Deadlines</h1>
+    <span id="lastSync" class="muted"></span>
+  </header>
+
+  <div id="list" class="list"></div>
+
+  <form id="addForm" class="add-form">
+    <input type="text" id="titleInput" placeholder="Title (e.g. Quiz 3)" required />
+    <select id="typeInput">
+      <option value="assignment">Assignment</option>
+      <option value="quiz">Quiz</option>
+      <option value="other">Other</option>
+    </select>
+    <input type="datetime-local" id="dueInput" required />
+    <button type="submit">Add</button>
+  </form>
+</body>
+<script src="popup.js"></script>
+</html>
