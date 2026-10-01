@@ -14,19 +14,6 @@ function monthIndex(name) {
   return MONTH_NAMES.findIndex((m) => m.toLowerCase().startsWith(short));
 }
 
-// Crude HTML-to-text conversion for the background service worker, which
-// has no DOMParser. Not as faithful as a real innerText, but preserves
-// enough line structure for the outline regexes below to still work.
-function htmlToText(html) {
-  return decodeEntities(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<(br|\/tr|\/td|\/div|\/p|\/li|\/h[1-6])[^>]*>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
-  );
-}
-
 function parseTermYear(text) {
   const m = text.match(/\b(Fall|Winter|Spring)\s+(\d{4})\b/);
   if (!m) return { year: new Date().getFullYear(), startMonth: 0 };
