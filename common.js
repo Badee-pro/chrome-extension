@@ -38,20 +38,24 @@ function parseFullDateFromText(text) {
 // boundary content.js uses on the live DOM).
 function extractItemsFromHtml(html, toolType, courseId, courseName, baseUrl) {
   const results = [];
-  const linkRe = /<a\s+[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-  let match;
-  while ((match = linkRe.exec(html)) !== null) {
-    const titleRaw = match[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const title = decodeEntities(titleRaw);
-    if (!title) continue;
+  // Split into per-row chunks so a title link and its "Due on ..." text are
+  // paired by table row, not by a fixed character distance (the real
+  // markup between them varies a lot more than a fixed window allows for).
+  const rows = html.split(/<tr[\s>]/i).slice(1);
 
-    const windowText = html.slice(match.index, match.index + 600);
-    const due = parseFullDateFromText(windowText);
+  for (const rowChunk of rows) {
+    const due = parseFullDateFromText(rowChunk);
     if (!due) continue;
+
+    const linkMatch = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/.exec(rowChunk);
+    if (!linkMatch) continue;
+
+    const title = decodeEntities(linkMatch[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    if (!title) continue;
 
     let url;
     try {
-      url = new URL(decodeEntities(match[1]), baseUrl).href;
+      url = new URL(decodeEntities(linkMatch[1]), baseUrl).href;
     } catch {
       url = baseUrl;
     }
@@ -72,24 +76,6 @@ function extractItemsFromHtml(html, toolType, courseId, courseName, baseUrl) {
   const byId = new Map();
   results.forEach((r) => byId.set(r.id, r));
   return Array.from(byId.values());
-}
-
-// Discovers enrolled courses from the raw HTML of the LEARN "My Home" page
-// (links to /d2l/home/<id> appear in the course cards / nav dropdown).
-// Used by the background service worker so it doesn't need the user to
-// visit each course first.
-function discoverCoursesFromHtml(html) {
-  const found = new Map();
-  const linkRe = /<a\s+[^>]*href="([^"]*\/d2l\/home\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
-  let m;
-  while ((m = linkRe.exec(html)) !== null) {
-    const id = m[2];
-    const text = decodeEntities(m[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
-    if (!text) continue;
-    const existing = found.get(id);
-    if (!existing || text.length > existing.length) found.set(id, text);
-  }
-  return Array.from(found.entries()).map(([id, name]) => ({ id, name }));
 }
 
 async function registerCourse(id, name) {

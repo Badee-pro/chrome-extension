@@ -5,7 +5,9 @@
   "description": "Tracks assignment and quiz deadlines from UWaterloo LEARN (D2L Brightspace) and reminds you before they're due.",
   "permissions": ["storage", "alarms", "notifications", "scripting"],
   "host_permissions": [
-    "*://*.learn.uwaterloo.ca/*"
+    "*://*.learn.uwaterloo.ca/*",
+    "*://outline.uwaterloo.ca/*",
+    "*://odyssey.uwaterloo.ca/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,6 +20,16 @@
         "*://learn.uwaterloo.ca/d2l/home*"
       ],
       "js": ["common.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://outline.uwaterloo.ca/viewer/*"],
+      "js": ["common.js", "content-outline.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://odyssey.uwaterloo.ca/teaching/schedule*"],
+      "js": ["common.js", "content-odyssey.js"],
       "run_at": "document_idle"
     }
   ],

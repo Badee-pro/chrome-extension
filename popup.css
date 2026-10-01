@@ -50,18 +50,51 @@ h1 {
   padding: 24px 0;
 }
 
-.course-group {
-  margin-bottom: 4px;
-}
-
-.course-header {
+.section-header {
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+  color: #1967d2;
+  padding: 6px 4px;
+}
+
+.due-soon-section {
+  margin-bottom: 6px;
+}
+
+.all-courses-section .section-header {
   color: #5f6368;
-  padding: 10px 4px 4px;
+}
+
+details.course-group {
+  margin-bottom: 2px;
+}
+
+.course-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #202124;
+  padding: 8px 4px;
   border-bottom: 1px solid #dadce0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.course-header::-webkit-details-marker {
+  display: none;
+}
+
+.course-header::before {
+  content: '\25b8';
+  display: inline-block;
+  margin-right: 6px;
+  color: #80868b;
+  transition: transform 0.1s;
+}
+
+details[open] > .course-header::before {
+  transform: rotate(90deg);
 }
 
 .item {

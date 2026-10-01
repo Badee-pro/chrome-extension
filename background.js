@@ -123,18 +123,28 @@ async function syncCoursePage(courseId, courseName, toolType, url) {
   }
 }
 
+// The LEARN homepage loads your enrolled courses via this API after the
+// page renders, so the HTML itself never contains the course list — this
+// calls the same endpoint directly instead of scraping a client-rendered
+// page. Filters to currently-active courses so it stays correct across
+// terms without hardcoding a semester id.
+const MYCOURSES_URL =
+  `${BASE}/d2l/le/manageCourses/api/mycourses?pageSize=50&sort=current&autoPinCourses=false&orgUnitTypeId=3&promotePins=true&embedDepth=0&widgetId=27968`;
+
 async function discoverCourses() {
   try {
-    const res = await fetch(`${BASE}/d2l/home`, { credentials: 'include' });
+    const res = await fetch(MYCOURSES_URL, { credentials: 'include' });
     if (!res.ok) {
-      if (DEBUG) console.log('[LEARN Deadline Tracker] home fetch failed', res.status);
+      if (DEBUG) console.log('[LEARN Deadline Tracker] mycourses fetch failed', res.status);
       return;
     }
-    const html = await res.text();
-    const discovered = discoverCoursesFromHtml(html);
-    if (DEBUG) console.log('[LEARN Deadline Tracker] discovered courses', discovered);
-    for (const c of discovered) {
-      await registerCourse(c.id, c.name);
+    const data = await res.json();
+    const active = (data.Courses || []).filter(
+      (c) => c.IsActive && (!c.EndDate || new Date(c.EndDate).getTime() > Date.now())
+    );
+    if (DEBUG) console.log('[LEARN Deadline Tracker] discovered courses', active.map((c) => c.Name));
+    for (const c of active) {
+      await registerCourse(String(c.OrgUnitId), c.Name);
     }
   } catch (e) {
     if (DEBUG) console.log('[LEARN Deadline Tracker] discovery error', e.message);
