@@ -186,27 +186,6 @@ async function discoverCourses() {
   }
 }
 
-const ODYSSEY_URL = 'https://odyssey.uwaterloo.ca/teaching/schedule';
-
-async function syncOdyssey() {
-  try {
-    const res = await fetch(ODYSSEY_URL, { credentials: 'include' });
-    if (!res.ok) {
-      if (DEBUG) console.log('[LEARN Deadline Tracker] bg odyssey fetch failed', res.status);
-      return;
-    }
-    const html = await res.text();
-    const items = extractOdysseyItemsFromHtml(html, ODYSSEY_URL);
-    if (DEBUG) console.log('[LEARN Deadline Tracker] bg-odyssey scraped', items.length);
-    if (items.length === 0) return;
-
-    const scrapeKeys = [...new Set(items.map((s) => s.scrapeKey))];
-    await enqueueWrite(() => mergeScrapedDeadlines(items, scrapeKeys));
-  } catch (e) {
-    if (DEBUG) console.log('[LEARN Deadline Tracker] bg odyssey sync error', e.message);
-  }
-}
-
 async function syncAllCourses() {
   await discoverCourses();
   const { courses = {} } = await chrome.storage.local.get('courses');
@@ -214,5 +193,8 @@ async function syncAllCourses() {
     await syncCoursePage(id, name, 'dropbox', `${BASE}/d2l/lms/dropbox/user/folders_list.d2l?ou=${id}`);
     await syncCoursePage(id, name, 'quiz', `${BASE}/d2l/lms/quizzing/user/quizzes_list.d2l?ou=${id}`);
   }
-  await syncOdyssey();
+  // Odyssey rejects fetches that aren't a real page navigation (likely
+  // SameSite=Strict session cookies being excluded from this cross-site
+  // extension fetch, or an SSO redirect to a domain we don't have
+  // permission for) — content-odyssey.js covers it instead when visited.
 }

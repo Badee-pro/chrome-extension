@@ -42,57 +42,6 @@ function parseFullDateFromText(text) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// Raw-HTML version of content-odyssey.js's DOM scraper, for use by the
-// background service worker (no DOMParser available there). Odyssey's
-// Assessment Schedule table is a single global page covering every course,
-// so this is cheap to refresh automatically on every sync cycle.
-function extractOdysseyItemsFromHtml(html, pageUrl) {
-  const results = [];
-  const rows = html.split(/<tr[\s>]/i).slice(1);
-
-  for (const rowChunk of rows) {
-    const cells = [...rowChunk.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
-    if (cells.length < 3) continue;
-
-    const examText = decodeEntities(cells[0][1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
-    const whenText = decodeEntities(cells[2][1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
-    if (!examText || !whenText) continue;
-
-    const codeMatch = examText.match(/^([A-Z]{2,6}\s?\d{2,4}[A-Z]?)\s+(.+)$/);
-    if (!codeMatch) continue;
-    const code = codeMatch[1].trim();
-    const title = codeMatch[2].trim();
-
-    const whenMatch = whenText.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
-    if (!whenMatch) continue;
-    const [, y, mo, d, h, mi] = whenMatch;
-    const due = new Date(
-      parseInt(y, 10),
-      parseInt(mo, 10) - 1,
-      parseInt(d, 10),
-      parseInt(h, 10),
-      parseInt(mi, 10)
-    );
-    if (isNaN(due.getTime())) continue;
-
-    results.push({
-      id: `${code}:odyssey:${title}:${due.toISOString()}`,
-      title,
-      type: /quiz|test|midterm|final|exam/i.test(title) ? 'quiz' : 'assignment',
-      due: due.toISOString(),
-      courseId: code,
-      courseName: code,
-      url: pageUrl,
-      source: 'scrape',
-      scrapeKey: `${code}:odyssey`
-    });
-  }
-
-  const byId = new Map();
-  results.forEach((r) => byId.set(r.id, r));
-  return Array.from(byId.values());
-}
-
 // Used by the background service worker, which has no DOMParser available.
 // Finds `<a href="...">Title</a>` tags and looks for a "Due on <date>"
 // within the following ~600 characters of raw markup (mirrors the row
