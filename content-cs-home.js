@@ -81,3 +81,45 @@ const interval = setInterval(() => {
   sync();
   if (attempts >= 5) clearInterval(interval);
 }, 1500);
+
+// This script runs on every page of the course (not just home), so this
+// discovery step cascades: the home page finds module/lab links, each of
+// those pages finds its own sub-links (questions, next/prev), and so on.
+// The background script dedupes by block id so this terminates once every
+// reachable page has been visited once, instead of looping forever.
+async function expandAllSections() {
+  const toggles = Array.from(document.querySelectorAll('[aria-expanded="false"]'));
+  for (const t of toggles) {
+    try {
+      t.click();
+    } catch {
+      // ignore elements that aren't actually clickable
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+function discoverBlockLinks() {
+  const anchors = Array.from(document.querySelectorAll('a[href*="block-v1"]'));
+  const urls = new Set();
+  anchors.forEach((a) => {
+    const href = a.getAttribute('href');
+    if (!href) return;
+    try {
+      urls.add(new URL(href, location.href).href);
+    } catch {
+      // ignore malformed hrefs
+    }
+  });
+  return Array.from(urls);
+}
+
+async function runDiscovery() {
+  await expandAllSections();
+  const urls = discoverBlockLinks();
+  if (DEBUG) console.log('[LEARN Deadline Tracker] cs-home discovered links', urls.length);
+  if (urls.length === 0) return;
+  chrome.runtime.sendMessage({ type: 'crawl-discovered-links', urls }).catch(() => {});
+}
+
+setTimeout(runDiscovery, 3000);

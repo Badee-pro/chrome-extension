@@ -86,6 +86,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // Fire-and-forget: each tab's own content script reports back via its
     // own 'merge-deadlines' message once it's scraped the page.
   }
+
+  if (msg && msg.type === 'crawl-discovered-links') {
+    crawlDiscoveredLinks(msg.urls || []);
+    // Fire-and-forget, deduped so this terminates instead of re-visiting
+    // the same pages (and cascading) every time they're seen again.
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -216,6 +222,42 @@ function openHiddenTab(url, waitMs) {
 async function openHiddenTabsSequentially(urls) {
   for (const url of urls) {
     await openHiddenTab(url, 8000);
+  }
+}
+
+function blockKeyFromUrl(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    return parts[parts.length - 1] || url;
+  } catch {
+    return url;
+  }
+}
+
+// Crawling a CS course's internal pages can reach dozens of blocks (every
+// lab, every question sub-page), and each one can discover further links —
+// without this, that cascades into re-visiting the same pages forever. Each
+// block is only ever auto-opened once; new blocks that show up later (e.g.
+// a lab added mid-term) still get picked up since they won't be in this set
+// yet.
+async function crawlDiscoveredLinks(urls) {
+  const { crawledBlocks = {} } = await chrome.storage.local.get('crawledBlocks');
+  const updated = { ...crawledBlocks };
+  const toVisit = [];
+
+  for (const url of urls) {
+    const key = blockKeyFromUrl(url);
+    if (updated[key]) continue;
+    updated[key] = Date.now();
+    toVisit.push(url);
+  }
+
+  if (toVisit.length === 0) return;
+  await chrome.storage.local.set({ crawledBlocks: updated });
+
+  if (DEBUG) console.log('[LEARN Deadline Tracker] crawling new blocks', toVisit.length);
+  for (const url of toVisit) {
+    await openHiddenTab(url, 7000);
   }
 }
 
